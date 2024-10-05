@@ -1,9 +1,10 @@
 import camelot
+import glob
 import numpy
 import pandas
 import pdfquery
 import re
-import traceback  # TODO: Remove
+import traceback
 
 def extract_data_from_pdf(pdf_path: str) -> pandas.DataFrame:
 	dataframes = []
@@ -81,37 +82,44 @@ def extract_data_from_pdf(pdf_path: str) -> pandas.DataFrame:
 		table_bottom = float(notes_line.attrib['y1'])
 
 		tables = camelot.read_pdf(pdf_path, pages=f'{page_id}', flavor='stream', split_text=True, table_areas=[f'{page_left},{table_top},{page_right},{table_bottom}'])
+		if len(tables) == 0:
+			print(f"Could not read table from page ID {page_id}")
+			continue
+
+		if len(tables) > 1:
+			print(f"Found more than one table on page ID {page_id}")
+			continue
 
 		df = tables[0].df
 
+		# Read the same table without 'split_text' to get more stable column headers
+		columns_df = camelot.read_pdf(pdf_path, pages=f'{page_id}', flavor='stream', table_areas=[f'{page_left},{table_top},{page_right},{table_bottom}'])[0].df
+
+		first_data_row_index = 0
+		while df.iat[first_data_row_index, 1] == '':
+			first_data_row_index = first_data_row_index + 1
+
+		first_data_row_index_in_columns_df = 0
+		while columns_df.iat[first_data_row_index_in_columns_df, 1] == '':
+			first_data_row_index_in_columns_df = first_data_row_index_in_columns_df + 1
+
 		# Set the first two column headers
 		# (We'll drop the UNUSED column later)
-		df.iat[0,0] = "UNUSED"
-		df.iat[0,1] = "Grade"
+		columns_df.iat[0,0] = "UNUSED"
+		columns_df.iat[0,1] = "Grade"
 
-		# Merge the first two rows of column headers
-		df.loc[1.5] = df.loc[0:1].agg(" ".join).apply(lambda s: s.strip())
+		last_column_header_row_index = first_data_row_index_in_columns_df - 1
+
+		# Merge the rows of column headers
+		df.loc[first_data_row_index-0.5] = columns_df.loc[0:last_column_header_row_index].agg(" ".join).apply(lambda s: s.strip())
 		df = df.sort_index().reset_index(drop=True)
 
-		# Drop the original first two rows
-		df = df.loc[2:]
+		# Drop the original rows of (unmerged) column headers
+		df = df.loc[first_data_row_index:]
 
 		# Use the first row as column headers
 		df.columns = df.iloc[0]
 		df = df[1:]
-
-		# Clean up some column names.
-		# This is probably the most fragile part of this script.  There may be other weird permutations of column names that aren't represented here.
-		if 'To on-Binary' in df.columns:
-			df = df.rename({'To on-Binary': 'Total Non-Binary', 'tal Student Count': 'Total Student Count', 'Female\nN': 'Female'}, axis=1)
-		elif 'To n-Binary' in df.columns:
-			df = df.rename({'To n-Binary': 'Total Non-Binary', 'tal Student Count': 'Total Student Count', 'Female\nNo': 'Female'}, axis=1)
-		elif 'Tot n-Binary' in df.columns:
-			df = df.rename({'Tot n-Binary': 'Total Non-Binary', 'al Student \nP Count': 'Total Student Count', 'Female\nNo': 'Female', '223 Total \nP Count': 'P223 Total Count', '223 Total Count': 'P223 Total Count', '223 Total FTE': 'P223 Total FTE'}, axis=1)
-		elif 'To Non-Binary' in df.columns:
-			df = df.rename({'To Non-Binary': 'Total Non-Binary', 'tal Student Count': 'Total Student Count'}, axis=1)
-		elif 'Tot Non-Binary' in df.columns:
-			df = df.rename({'Tot Non-Binary': 'Total Non-Binary', 'al Student Count': 'Total Student Count'}, axis=1)
 
 		# Clean up the grade values that get weirdly merged together
 
@@ -136,7 +144,7 @@ def extract_data_from_pdf(pdf_path: str) -> pandas.DataFrame:
 			'Spec. Ed. Served',
 			'Male',
 			'Female',
-			'Total Non-Binary',
+			'Non-Binary',
 			'Total Student Count',
 			'P223 Total Count',
 			'P223 Total FTE'
@@ -174,7 +182,7 @@ def extract_data_from_pdf(pdf_path: str) -> pandas.DataFrame:
 			'Spec. Ed. Served',
 			'Male',
 			'Female',
-			'Total Non-Binary',
+			'Non-Binary',
 			'Total Student Count',
 			'P223 Total Count',
 			'P223 Total FTE'
@@ -187,15 +195,14 @@ def extract_data_from_pdf(pdf_path: str) -> pandas.DataFrame:
 	concatenated_df = pandas.concat(dataframes)
 	return concatenated_df
 
+
 def main():
 	try:
-		pdf_path = '/Users/andy/repos/sps-data/input/P223_Sep24.pdf'
+		for pdf_path in glob.glob('./input/*.pdf'):
+			df = extract_data_from_pdf(pdf_path)
+			print(df)
 
-		df = extract_data_from_pdf(pdf_path)
-
-		print(df)
-
-		return df
+		#return df
 
 	except Exception as e:
 		traceback.print_exc()
@@ -203,6 +210,7 @@ def main():
 
 		import pdb
 		pdb.post_mortem()
+
 
 if __name__ == "__main__":
     main()
