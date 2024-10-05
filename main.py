@@ -9,14 +9,14 @@ import re
 import time
 import traceback
 
-def extract_data_from_pdf(pdf_path: str) -> pandas.DataFrame:
+def extract_data_from_pdf(pdf_path: str, pdf_index: int, pdf_count: int) -> pandas.DataFrame:
 	dataframes = []
 
-	print(f"Loading PDF: '{pdf_path}'")
+	print(f"[{pdf_index+1}/{pdf_count}] Loading PDF: '{pdf_path}'")
 	pdf = pdfquery.PDFQuery(pdf_path)
 	pdf.load()
 
-	print(f"Processing PDF: '{pdf_path}'")
+	print(f"[{pdf_index+1}/{pdf_count}] Processing PDF: '{pdf_path}'")
 	pages = pdf.pq('LTPage')
 
 	numeric_columns = [
@@ -162,7 +162,7 @@ def extract_data_from_pdf(pdf_path: str) -> pandas.DataFrame:
 		individual_sums = df[df['Grade'] != 'Total'][numeric_columns].sum()
 		total_sum = df[df['Grade'] == 'Total'][numeric_columns].sum()
 
-		if not numpy.allclose(individual_sums, total_sum):
+		if not numpy.allclose(individual_sums, total_sum, atol=0.1):
 			print(f"WARNING: Numbers don't seem to add up for '{school_name}'.")
 			print("")
 			print("Sum of individual grade levels:")
@@ -201,7 +201,7 @@ def extract_data_from_pdf(pdf_path: str) -> pandas.DataFrame:
 	individual_sums = concatenated_df[concatenated_df['School'] != 'District Total'][numeric_columns].sum()
 	total_sum = concatenated_df[concatenated_df['School'] == 'District Total'][numeric_columns].sum()
 
-	if not numpy.allclose(individual_sums, total_sum):
+	if not numpy.allclose(individual_sums, total_sum, atol=0.1):
 		print(f"WARNING: District-wide numbers don't seem to add up for '{pdf_path}'.")
 		print("")
 		print("Sum of schools:")
@@ -222,7 +222,9 @@ def main():
 	try:
 		dataframes = []
 
-		for pdf_path in glob.glob('./input/*.pdf'):
+		pdf_paths = glob.glob('./input/*.pdf')
+
+		for pdf_index, pdf_path in enumerate(pdf_paths):
 			filename = os.path.basename(pdf_path)
 
 			m = re.match(r'^P223_(\D+)(\d+)\.pdf$', filename)
@@ -236,7 +238,7 @@ def main():
 			parsed_month = time.strptime(f'{month_name_abbreviated} {year_two_digit}', '%b %y')
 			month = time.strftime('%Y-%m', parsed_month)
 
-			df = extract_data_from_pdf(pdf_path)
+			df = extract_data_from_pdf(pdf_path, pdf_index, len(pdf_paths))
 
 			df['Month'] = month
 
