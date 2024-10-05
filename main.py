@@ -54,4 +54,23 @@ for page_index in range(1, len(pages)):
 
 	breakpoint()
 
+	# Set the first two column headers
+	# (We'll drop the UNUSED column later)
+	df.iat[0,0] = "UNUSED"
+	df.iat[0,1] = "Grade"
+
+	# Merge the first two rows of column headers
+	df.loc[1.5] = df.loc[0:1].agg(" ".join).apply(lambda s: s.strip())
+	df = df.sort_index().reset_index(drop=True)
+
+	# Drop the original first two rows
+	df = df.loc[2:]
+
+	# Use the first row as column headers
+	df.columns = df.iloc[0]
+	df = df[1:]
+
+	df = df.drop('UNUSED', axis=1)
+
+
 tables = camelot.read_pdf(pdf_path)
