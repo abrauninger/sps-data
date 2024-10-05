@@ -133,6 +133,7 @@ def main():
 
 			# Convert numeric columns
 			numeric_columns = [
+				'Regular Program',
 				'Bilingual Served',
 				'Spec. Ed. Served',
 				'Male',
@@ -166,11 +167,30 @@ def main():
 			df = df[df['Grade'] != 'Total']
 
 			df['School'] = school_name
+
+			columns_in_desired_order = [
+				'School',
+				'Grade',
+				'Regular Program',
+				'Bilingual Served',
+				'Spec. Ed. Served',
+				'Male',
+				'Female',
+				'Total Non-Binary',
+				'Total Student Count',
+				'P223 Total Count',
+				'P223 Total FTE'
+			]
+
+			df = df[columns_in_desired_order]
+
 			dataframes.append(df)
 
 		large_df = pandas.concat(dataframes)
 
 		print(large_df)
+
+		return large_df
 
 	except Exception as e:
 		traceback.print_exc()
