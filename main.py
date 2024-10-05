@@ -1,9 +1,11 @@
 import camelot
 import glob
 import numpy
+import os
 import pandas
 import pdfquery
 import re
+import time
 import traceback
 
 def extract_data_from_pdf(pdf_path: str) -> pandas.DataFrame:
@@ -211,14 +213,35 @@ def extract_data_from_pdf(pdf_path: str) -> pandas.DataFrame:
 
 	# Drop 'District Total' from the concatenated data
 	concatenated_df = concatenated_df[concatenated_df['School'] != 'District Total']
-	
+
 	return concatenated_df
 
 
 def main():
 	try:
 		for pdf_path in glob.glob('./input/*.pdf'):
+			filename = os.path.basename(pdf_path)
+
+			m = re.match(r'^P223_(\D+)(\d+)\.pdf$', filename)
+			if m is None:
+				print(f"Unable to determine month and year from filename: '{filename}'")
+				continue
+
+			month_name_abbreviated = m.group(1)
+			year_two_digit = m.group(2)
+
+			parsed_month = time.strptime(f'{month_name_abbreviated} {year_two_digit}', '%b %y')
+			month_name = time.strftime('%B %Y', parsed_month)
+
 			df = extract_data_from_pdf(pdf_path)
+
+			df['Month'] = month_name
+
+			# Move 'Month' to the beginning of the column list
+			columns = df.columns.tolist()
+			columns = ['Month'] + [column for column in columns if column != 'Month']
+			df = df[columns]
+
 			print(df)
 
 		#return df
