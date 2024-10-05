@@ -1,29 +1,14 @@
-# Install dependencies
+# Installation
 
-## uv
-
-```console
-# On macOS and Linux.
-$ curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# On Windows.
-$ powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
-
-# With pip.
-$ pip install uv
-```
-
-https://github.com/astral-sh/uv/blob/main/README.md
-
-## Camelot
+This package has only been tested on macOS.
 
 ```console
-# On macOS.
-$ brew install ghostscript tcl-tk
-
-# On Linux (Ubuntu).
-$ apt install ghostscript python3-tk
+$ brew install uv ghostscript tcl-tk
 ```
 
-https://camelot-py.readthedocs.io/en/master/user/install-deps.html
+## Dependencies
 
+For more information on these dependencies installed with `brew`, see:
+
+* [uv](https://github.com/astral-sh/uv/blob/main/README.md)
+* [Camelot](https://camelot-py.readthedocs.io/en/master/user/install-deps.html)
