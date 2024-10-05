@@ -5,164 +5,179 @@ import pdfquery
 import re
 import traceback  # TODO: Remove
 
-try:
-	pdf_path = '/Users/andy/repos/sps-data/input/P223_Sep24.pdf'
-	pdf = pdfquery.PDFQuery(pdf_path)
-	pdf.load()
+def main():
+	try:
+		dataframes = []
 
-	pages = pdf.pq('LTPage')
+		pdf_path = '/Users/andy/repos/sps-data/input/P223_Sep24.pdf'
 
-	# Tables start on page index 1 (page id 2)
-	for page_index in range(1, len(pages)):
-		page_id = page_index + 1
+		print(f"Loading PDF: '{pdf_path}'")
+		pdf = pdfquery.PDFQuery(pdf_path)
+		pdf.load()
 
-		pages = pdf.pq(f'LTPage[pageid="{page_id}"]')
+		print(f"Processing PDF")
+		pages = pdf.pq('LTPage')
 
-		if len(pages) != 1:
-			print(f"Could not find a page with ID {page_id}")
-			continue
+		# Tables start on page index 1 (page id 2)
+		for page_index in range(1, len(pages)):
+			page_id = page_index + 1
 
-		page_left = 0
-		page_right = float(pages[0].attrib['x1'])
+			pages = pdf.pq(f'LTPage[pageid="{page_id}"]')
 
-		text_boxes = pdf.pq(f'LTPage[pageid="{page_id}"] LTTextBoxHorizontal:contains("School")')
+			if len(pages) != 1:
+				print(f"Could not find a page with ID {page_id}")
+				continue
 
-		school_label = None
+			page_left = 0
+			page_right = float(pages[0].attrib['x1'])
 
-		for text_box in text_boxes:
-			m = re.match(r"^School\:(.*)$", text_box.text.strip())
-			if m:
-				school_label = text_box
-				break
+			text_boxes = pdf.pq(f'LTPage[pageid="{page_id}"] LTTextBoxHorizontal:contains("School")')
 
-		if school_label is None:
-			print(f"Could not find 'School:' text box on page ID {page_id}")
-			continue
+			school_label = None
 
-		school_label_top = school_label.attrib['y0']
-		school_label_bottom = school_label.attrib['y1']
+			for text_box in text_boxes:
+				m = re.match(r"^School\:(.*)$", text_box.text.strip())
+				if m:
+					school_label = text_box
+					break
 
-		if page_id == 95:
-			breakpoint()
+			if school_label is None:
+				print(f"Could not find 'School:' text box on page ID {page_id}")
+				continue
 
-		extracted = pdf.extract([
-			('with_parent', f'LTPage[pageid="{page_id}"]'),
-			('school_name', f'LTTextBoxHorizontal:overlaps_bbox("{page_left},{school_label_top},{page_right},{school_label_bottom}")')
-		])
+			school_label_top = school_label.attrib['y0']
+			school_label_bottom = school_label.attrib['y1']
 
-		school_name_textboxes = extracted['school_name']
-		if len(school_name_textboxes) == 0:
-			print(f"Could not find the school name on page ID {page_id}")
-			continue
+			extracted = pdf.extract([
+				('with_parent', f'LTPage[pageid="{page_id}"]'),
+				('school_name', f'LTTextBoxHorizontal:overlaps_bbox("{page_left},{school_label_top},{page_right},{school_label_bottom}")')
+			])
 
-		school_name = None
+			school_name_textboxes = extracted['school_name']
+			if len(school_name_textboxes) == 0:
+				print(f"Could not find the school name on page ID {page_id}")
+				continue
 
-		for school_name_textbox in school_name_textboxes:
-			m = re.match(r"^School\:(.+)$", text_box.text.strip())
-			if m:
-				school_name = m.group(1).strip()
-				break
+			school_name = None
 
-		if school_name is None:
-			school_name = school_name_textboxes[-1].text.strip()
+			for school_name_textbox in school_name_textboxes:
+				m = re.match(r"^School\:(.+)$", text_box.text.strip())
+				if m:
+					school_name = m.group(1).strip()
+					break
 
-		if school_name is None:
-			print(f"WARNING: Couldn't find the school name on page ID {page_id}")
+			if school_name is None:
+				school_name = school_name_textboxes[-1].text.strip()
 
-		# For some reason the beginning N in NOTES is truncated
-		text_boxes = pdf.pq(f'LTPage[pageid="{page_id}"] LTTextBoxHorizontal:contains("OTES:")')
-		if len(text_boxes) != 1:
-			print(f"Could note find 'NOTES:' text box on page ID {page_id}")
-			continue
+			if school_name is None:
+				print(f"WARNING: Couldn't find the school name on page ID {page_id}")
 
-		notes_line = text_boxes[0]
+			# For some reason the beginning N in NOTES is truncated
+			text_boxes = pdf.pq(f'LTPage[pageid="{page_id}"] LTTextBoxHorizontal:contains("OTES:")')
+			if len(text_boxes) != 1:
+				print(f"Could note find 'NOTES:' text box on page ID {page_id}")
+				continue
 
-		table_top = float(school_label.attrib['y0'])
-		table_bottom = float(notes_line.attrib['y1'])
+			notes_line = text_boxes[0]
 
-		tables = camelot.read_pdf(pdf_path, pages=f'{page_id}', flavor='stream', split_text=True, table_areas=[f'{page_left},{table_top},{page_right},{table_bottom}'])
+			table_top = float(school_label.attrib['y0'])
+			table_bottom = float(notes_line.attrib['y1'])
 
-		df = tables[0].df
+			tables = camelot.read_pdf(pdf_path, pages=f'{page_id}', flavor='stream', split_text=True, table_areas=[f'{page_left},{table_top},{page_right},{table_bottom}'])
 
-		# Set the first two column headers
-		# (We'll drop the UNUSED column later)
-		df.iat[0,0] = "UNUSED"
-		df.iat[0,1] = "Grade"
+			df = tables[0].df
 
-		# Merge the first two rows of column headers
-		df.loc[1.5] = df.loc[0:1].agg(" ".join).apply(lambda s: s.strip())
-		df = df.sort_index().reset_index(drop=True)
+			# Set the first two column headers
+			# (We'll drop the UNUSED column later)
+			df.iat[0,0] = "UNUSED"
+			df.iat[0,1] = "Grade"
 
-		# Drop the original first two rows
-		df = df.loc[2:]
+			# Merge the first two rows of column headers
+			df.loc[1.5] = df.loc[0:1].agg(" ".join).apply(lambda s: s.strip())
+			df = df.sort_index().reset_index(drop=True)
 
-		# Use the first row as column headers
-		df.columns = df.iloc[0]
-		df = df[1:]
+			# Drop the original first two rows
+			df = df.loc[2:]
 
-		# Clean up some column names
-		if 'To on-Binary' in df.columns:
-			df = df.rename({'To on-Binary': 'Total Non-Binary', 'tal Student Count': 'Total Student Count', 'Female\nN': 'Female'}, axis=1)
-		elif 'To n-Binary' in df.columns:
-			df = df.rename({'To n-Binary': 'Total Non-Binary', 'tal Student Count': 'Total Student Count', 'Female\nNo': 'Female'}, axis=1)
-		elif 'Tot n-Binary' in df.columns:
-			df = df.rename({'Tot n-Binary': 'Total Non-Binary', 'al Student \nP Count': 'Total Student Count', 'Female\nNo': 'Female', '223 Total \nP Count': 'P223 Total Count', '223 Total FTE': 'P223 Total FTE'}, axis=1)
-		elif 'Tot Non-Binary' in df.columns:
-			df = df.rename({'Tot Non-Binary': 'Total Non-Binary', 'al Student Count': 'Total Student Count'}, axis=1)
+			# Use the first row as column headers
+			df.columns = df.iloc[0]
+			df = df[1:]
 
-		# Clean up the grade values that get weirdly merged together
+			# Clean up some column names
+			if 'To on-Binary' in df.columns:
+				df = df.rename({'To on-Binary': 'Total Non-Binary', 'tal Student Count': 'Total Student Count', 'Female\nN': 'Female'}, axis=1)
+			elif 'To n-Binary' in df.columns:
+				df = df.rename({'To n-Binary': 'Total Non-Binary', 'tal Student Count': 'Total Student Count', 'Female\nNo': 'Female'}, axis=1)
+			elif 'Tot n-Binary' in df.columns:
+				df = df.rename({'Tot n-Binary': 'Total Non-Binary', 'al Student \nP Count': 'Total Student Count', 'Female\nNo': 'Female', '223 Total \nP Count': 'P223 Total Count', '223 Total Count': 'P223 Total Count', '223 Total FTE': 'P223 Total FTE'}, axis=1)
+			elif 'To Non-Binary' in df.columns:
+				df = df.rename({'To Non-Binary': 'Total Non-Binary', 'tal Student Count': 'Total Student Count'}, axis=1)
+			elif 'Tot Non-Binary' in df.columns:
+				df = df.rename({'Tot Non-Binary': 'Total Non-Binary', 'al Student Count': 'Total Student Count'}, axis=1)
 
-		# Elementary schools
-		df.loc[df['Grade'] == '5 6 7', 'Grade'] = 5
+			# Clean up the grade values that get weirdly merged together
 
-		# Middle schools
-		df.loc[df['Grade'] == '3 4 5 6', 'Grade'] = 6
-		df.loc[df['Grade'] == '8 9', 'Grade'] = 8
-		df.loc[df['Grade'] == '1\n0', 'Grade'] = 10
+			# Elementary schools
+			df.loc[df['Grade'] == '5 6 7', 'Grade'] = 5
 
-		# High schools
-		df.loc[df['Grade'] == '5 6 7 8 9', 'Grade'] = 9
-		df.loc[df['Grade'] == '1\n0', 'Grade'] = 10
+			# Middle schools
+			df.loc[df['Grade'] == '3 4 5 6', 'Grade'] = 6
+			df.loc[df['Grade'] == '8 9', 'Grade'] = 8
+			df.loc[df['Grade'] == '1\n0', 'Grade'] = 10
 
-		df = df.drop('UNUSED', axis=1)
+			# High schools
+			df.loc[df['Grade'] == '5 6 7 8 9', 'Grade'] = 9
+			df.loc[df['Grade'] == '1\n0', 'Grade'] = 10
 
-		# Convert numeric columns
-		numeric_columns = [
-			'Bilingual Served',
-			'Spec. Ed. Served',
-			'Male',
-			'Female',
-			'Total Non-Binary',
-			'Total Student Count',
-			'P223 Total Count',
-			'P223 Total FTE'
-		]
+			df = df.drop('UNUSED', axis=1)
 
-		for numeric_column in numeric_columns:
-			df[numeric_column] = pandas.to_numeric(df[numeric_column])
+			# Convert numeric columns
+			numeric_columns = [
+				'Bilingual Served',
+				'Spec. Ed. Served',
+				'Male',
+				'Female',
+				'Total Non-Binary',
+				'Total Student Count',
+				'P223 Total Count',
+				'P223 Total FTE'
+			]
 
-		df = df[df['Total Student Count'].notnull()]
+			for numeric_column in numeric_columns:
+				df[numeric_column] = pandas.to_numeric(df[numeric_column])
 
-		# Check that totals add up properly
-		individual_sums = df[df['Grade'] != 'Total'][numeric_columns].sum()
-		total_sum = df[df['Grade'] == 'Total'][numeric_columns].sum()
+			df = df[df['Total Student Count'].notnull()]
 
-		if not numpy.allclose(individual_sums, total_sum):
-			print(f"WARNING: Numbers don't seem to add up for '{school_name}'.")
-			print("")
-			print("Sum of individual grade levels:")
-			print(individual_sums.to_string())
-			print("")
-			print("Total as reported:")
-			print(total_sum.to_string())
-			print("")
-			print("")
+			# Check that totals add up properly
+			individual_sums = df[df['Grade'] != 'Total'][numeric_columns].sum()
+			total_sum = df[df['Grade'] == 'Total'][numeric_columns].sum()
 
-		df = df[df['Grade'] != 'Total']
+			if not numpy.allclose(individual_sums, total_sum):
+				print(f"WARNING: Numbers don't seem to add up for '{school_name}'.")
+				print("")
+				print("Sum of individual grade levels:")
+				print(individual_sums.to_string())
+				print("")
+				print("Total as reported:")
+				print(total_sum.to_string())
+				print("")
+				print("")
 
-except Exception as e:
-	traceback.print_exc()
-	print('')
+			df = df[df['Grade'] != 'Total']
 
-	import pdb
-	pdb.post_mortem()
+			df['School'] = school_name
+			dataframes.append(df)
+
+		large_df = pandas.concat(dataframes)
+
+		print(large_df)
+
+	except Exception as e:
+		traceback.print_exc()
+		print('')
+
+		import pdb
+		pdb.post_mortem()
+
+if __name__ == "__main__":
+    main()
