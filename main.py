@@ -16,6 +16,18 @@ def extract_data_from_pdf(pdf_path: str) -> pandas.DataFrame:
 	print(f"Processing PDF")
 	pages = pdf.pq('LTPage')
 
+	numeric_columns = [
+		'Regular Program',
+		'Bilingual Served',
+		'Spec. Ed. Served',
+		'Male',
+		'Female',
+		'Non-Binary',
+		'Total Student Count',
+		'P223 Total Count',
+		'P223 Total FTE'
+	]
+
 	# Tables start on page index 1 (page id 2)
 	for page_index in range(1, len(pages)):
 		page_id = page_index + 1
@@ -138,18 +150,6 @@ def extract_data_from_pdf(pdf_path: str) -> pandas.DataFrame:
 		df = df.drop('UNUSED', axis=1)
 
 		# Convert numeric columns
-		numeric_columns = [
-			'Regular Program',
-			'Bilingual Served',
-			'Spec. Ed. Served',
-			'Male',
-			'Female',
-			'Non-Binary',
-			'Total Student Count',
-			'P223 Total Count',
-			'P223 Total FTE'
-		]
-
 		for numeric_column in numeric_columns:
 			df[numeric_column] = pandas.to_numeric(df[numeric_column])
 
@@ -193,6 +193,25 @@ def extract_data_from_pdf(pdf_path: str) -> pandas.DataFrame:
 		dataframes.append(df)
 
 	concatenated_df = pandas.concat(dataframes)
+
+	# Check that the district totals add up properly
+	individual_sums = concatenated_df[concatenated_df['School'] != 'District Total'][numeric_columns].sum()
+	total_sum = concatenated_df[concatenated_df['School'] == 'District Total'][numeric_columns].sum()
+
+	if not numpy.allclose(individual_sums, total_sum):
+		print(f"WARNING: District-wide numbers don't seem to add up for '{pdf_path}'.")
+		print("")
+		print("Sum of schools:")
+		print(individual_sums.to_string())
+		print("")
+		print("District totals:")
+		print(total_sum.to_string())
+		print("")
+		print("")
+
+	# Drop 'District Total' from the concatenated data
+	concatenated_df = concatenated_df[concatenated_df['School'] != 'District Total']
+	
 	return concatenated_df
 
 
