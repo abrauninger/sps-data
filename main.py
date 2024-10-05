@@ -48,11 +48,9 @@ for page_index in range(1, len(pages)):
 	table_top = float(top_element.attrib['y0'])
 	table_bottom = float(bottom_element.attrib['y1'])
 
-	tables = camelot.read_pdf(pdf_path, pages=f'{page_id}', flavor='stream', table_areas=[f'{page_left},{table_top},{page_right},{table_bottom}'])
+	tables = camelot.read_pdf(pdf_path, pages=f'{page_id}', flavor='stream', split_text=True, table_areas=[f'{page_left},{table_top},{page_right},{table_bottom}'])
 
 	df = tables[0].df
-
-	breakpoint()
 
 	# Set the first two column headers
 	# (We'll drop the UNUSED column later)
@@ -70,7 +68,31 @@ for page_index in range(1, len(pages)):
 	df.columns = df.iloc[0]
 	df = df[1:]
 
+	# Clean up some column names
+	if 'To on-Binary' in df.columns:
+		df = df.rename({'To on-Binary': 'Total Non-Binary', 'tal Student Count': 'Total Student Count', 'Female\nN': 'Female'}, axis=1)
+	elif 'Tot Non-Binary' in df.columns:
+		df = df.rename({'Tot on-Binary': 'Total Non-Binary', 'al Student Count': 'Total Student Count'}, axis=1)
+
+	# Clean up the grade values that get weirdly merged together
+
+	# Elementary schools
+	df.loc[df['Grade'] == '5 6 7', 'Grade'] = 5
+
+	# Middle schools
+	df.loc[df['Grade'] == '3 4 5 6', 'Grade'] = 6
+	df.loc[df['Grade'] == '8 9', 'Grade'] = 8
+	df.loc[df['Grade'] == '1\n0', 'Grade'] = 10
+
+	# High schools
+	df.loc[df['Grade'] == '5 6 7 8 9', 'Grade'] = 9
+	df.loc[df['Grade'] == '1\n0', 'Grade'] = 10
+
+	df = df[df['Total Student Count'] != '']
 	df = df.drop('UNUSED', axis=1)
+
+	if school_name == 'West Seattle' or school_name == 'Hamilton International' or school_name == 'Daniel Bagley':
+		breakpoint()
 
 
 tables = camelot.read_pdf(pdf_path)
