@@ -15,7 +15,7 @@ def extract_data_from_pdf(pdf_path: str) -> pandas.DataFrame:
 	pdf = pdfquery.PDFQuery(pdf_path)
 	pdf.load()
 
-	print(f"Processing PDF")
+	print(f"Processing PDF: '{pdf_path}'")
 	pages = pdf.pq('LTPage')
 
 	numeric_columns = [
@@ -219,6 +219,8 @@ def extract_data_from_pdf(pdf_path: str) -> pandas.DataFrame:
 
 def main():
 	try:
+		dataframes = []
+
 		for pdf_path in glob.glob('./input/*.pdf'):
 			filename = os.path.basename(pdf_path)
 
@@ -231,20 +233,26 @@ def main():
 			year_two_digit = m.group(2)
 
 			parsed_month = time.strptime(f'{month_name_abbreviated} {year_two_digit}', '%b %y')
-			month_name = time.strftime('%B %Y', parsed_month)
+			month = time.strftime('%Y-%m', parsed_month)
 
 			df = extract_data_from_pdf(pdf_path)
 
-			df['Month'] = month_name
+			df['Month'] = month
 
 			# Move 'Month' to the beginning of the column list
 			columns = df.columns.tolist()
 			columns = ['Month'] + [column for column in columns if column != 'Month']
 			df = df[columns]
 
-			print(df)
+			dataframes.append(df)
 
-		#return df
+		concatenated_df = pandas.concat(dataframes)
+		
+		output_csv_path = 'output/p223_all.csv'
+		os.mkdir('output')
+		concatenated_df.to_csv(output_csv_path)
+
+		print(f"Data written to '{output_csv_path}'")
 
 	except Exception as e:
 		traceback.print_exc()
