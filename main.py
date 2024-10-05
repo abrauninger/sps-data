@@ -3,6 +3,7 @@ import glob
 import numpy
 import os
 import pandas
+import pathlib
 import pdfquery
 import re
 import time
@@ -248,8 +249,10 @@ def main():
 
 		concatenated_df = pandas.concat(dataframes)
 		
+		concatenated_df = concatenated_df.sort_values(['Month', 'School'])
+
 		output_csv_path = 'output/p223_all.csv'
-		os.mkdir('output')
+		pathlib.Path('output').mkdir(parents=True, exist_ok=True)
 		concatenated_df.to_csv(output_csv_path)
 
 		print(f"Data written to '{output_csv_path}'")
