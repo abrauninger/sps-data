@@ -8,7 +8,6 @@ import pathlib
 import pdfquery
 import re
 import time
-import tqdm
 import traceback
 
 from typing import Callable, List, NamedTuple
@@ -286,8 +285,8 @@ class Progress:
 	completed_tasks: int
 	total_tasks: int
 
-	def __init__(self, total_tasks: int):
-		self.completed_tasks = 0
+	def __init__(self, completed_tasks: int, total_tasks: int):
+		self.completed_tasks = completed_tasks
 		self.total_tasks = total_tasks
 
 	def report(self, message: str, increment_completed=True):
@@ -321,7 +320,7 @@ def extract_all_pdfs(input_directory: str, output_directory: str) -> List[str]:
 	# Each PDF task has two big chunks of work: Load PDF, and extract data from it
 	total_expected_done_queue_count = len(tasks) * 2
 
-	progress = Progress(total_tasks=total_expected_done_queue_count)
+	progress = Progress(completed_tasks=0, total_tasks=total_expected_done_queue_count+1)
 
 	progress.report(f"Extracting {len(pdf_paths)} PDF(s)", increment_completed=False)
 
@@ -338,15 +337,11 @@ def extract_all_pdfs(input_directory: str, output_directory: str) -> List[str]:
 	for _ in range(PROCESS_COUNT):
 		task_queue.put('STOP')
 
-	# with multiprocessing.Pool(8) as pool:
-	# 	output_csv_paths = list(tqdm.tqdm(pool.imap_unordered(extract_task, tasks), total=len(tasks), desc="Extracting data from PDFs"))
-	# 	return output_csv_paths
-
-	return output_csv_paths
+	return (output_csv_paths, progress.total_tasks)
 
 
 def main():
-	month_csv_files = extract_all_pdfs('input', 'output/p223/month')
+	month_csv_files, progress_total_tasks = extract_all_pdfs('input', 'output/p223/month')
 
 	dataframes = [pandas.read_csv(month_csv_file) for month_csv_file in month_csv_files]
 
@@ -358,7 +353,7 @@ def main():
 	pathlib.Path(os.path.dirname(output_csv_path)).mkdir(parents=True, exist_ok=True)
 	concatenated_df.to_csv(output_csv_path)
 
-	print(f"Data from all PDFs written to '{output_csv_path}'")
+	Progress(completed_tasks=progress_total_tasks, total_tasks=progress_total_tasks, increment_completed=False).report(f"Data from all PDFs written to '{output_csv_path}'")
 
 
 if __name__ == "__main__":
