@@ -12,13 +12,15 @@ import traceback
 
 from typing import Callable, List, NamedTuple
 
-def extract_data_from_pdf(pdf_path: str, month: str, output_csv_path: str, on_pdf_load: Callable):
+def extract_data_from_pdf(pdf_path: str, month: str, output_csv_path: str, on_pdf_load: Callable | None):
 	dataframes = []
 
 	#print(f"Loading PDF: '{pdf_path}'")
 	pdf = pdfquery.PDFQuery(pdf_path)
 	pdf.load()
-	on_pdf_load()
+
+	if on_pdf_load is not None:
+		on_pdf_load()
 
 	#print(f"Processing PDF: '{pdf_path}'")
 	pages = pdf.pq('LTPage')
@@ -140,20 +142,6 @@ def extract_data_from_pdf(pdf_path: str, month: str, output_csv_path: str, on_pd
 		df.columns = df.iloc[0]
 		df = df[1:]
 
-		# Clean up the grade values that get weirdly merged together
-
-		# Elementary schools
-		df.loc[df['Grade'] == '5 6 7', 'Grade'] = 5
-
-		# Middle schools
-		df.loc[df['Grade'] == '3 4 5 6', 'Grade'] = 6
-		df.loc[df['Grade'] == '8 9', 'Grade'] = 8
-		df.loc[df['Grade'] == '1\n0', 'Grade'] = 10
-
-		# High schools
-		df.loc[df['Grade'] == '5 6 7 8 9', 'Grade'] = 9
-		df.loc[df['Grade'] == '1\n0', 'Grade'] = 10
-
 		df = df.drop('UNUSED', axis=1)
 
 		# Convert numeric columns
@@ -161,6 +149,109 @@ def extract_data_from_pdf(pdf_path: str, month: str, output_csv_path: str, on_pd
 			df[numeric_column] = pandas.to_numeric(df[numeric_column])
 
 		df = df[df['Total Student Count'].notnull()]
+
+		# Clean up grade values
+
+		# 'read_pdf' does OK, but a huge weakness is that it produces 'Grade' values with grades from multiple rows collapsed together.
+		# Usually, but not always, the last grade in the collapsed list is the correct one.
+
+		# Strip out newlines entirely
+		df['Grade'] = df['Grade'].apply(lambda s: re.sub(r'\n', '', s))
+
+		# Collapse runs of multiple spaces into one space
+		df['Grade'] = df['Grade'].apply(lambda s: re.sub(r'\s+', ' ', s))
+
+		# Rename 'State FDK' to just 'K'
+		df['Grade'] = df['Grade'].apply(lambda s: s.replace('State FDK', 'K'))
+
+		# Clean up the grade values that get weirdly merged together
+
+		# First, the ones that don't fit the general pattern (so we filter to specific schools so that we don't overmatch them)
+		if school_name == 'Non-Public Agencies':
+			df.loc[df['Grade'] == 'K Preschool', 'Grade'] = 'Preschool'
+		# 	if month in ['2020-09']:
+		# 		df.loc[df['Grade'] == '1 2 3', 'Grade'] = '2'
+		# 	if month in []:
+		# 		df.loc[df['Grade'] == '1 2', 'Grade'] = '1'
+		# 	if month in []:
+		# 		df.loc[df['Grade'] == '4 5', 'Grade'] = '4'
+		if school_name == 'Exp Ed Unit':
+			df.loc[df['Grade'] == 'K 1 2 3 4', 'Grade'] = 'K'
+			df.loc[df['Grade'] == 'K 1 2 3 4 5', 'Grade'] = 'K'
+			df.loc[df['Grade'] == '1 2 3 4 5 K', 'Grade'] = 'K'
+		elif school_name == 'Special Ed Private Svcs':
+			df.loc[df['Grade'] == 'K 1 Preschool', 'Grade'] = 'Preschool'
+			df.loc[df['Grade'] == 'K 1 2 3 4 Preschool', 'Grade'] = 'Preschool'
+		# elif school_name == 'Interagency':
+		# 	if month in ['2022-06']:
+		# 		df.loc[df['Grade'] == '4 5 6 7', 'Grade'] = '7'
+		# 	if month in ['2022-12']:
+		# 		# Goes against the pattern (which would normally be 7 in this case)
+		# 		df.loc[df['Grade'] == '3 4 5 6 7', 'Grade'] = '6'
+		# elif school_name == 'In Tandem':
+		# 	if month in ['2020-09']:
+		# 		df.loc[df['Grade'] == '2 3 4', 'Grade'] = '4'
+		# 	if month in ['2022-06']:
+		# 		# Goes against the pattern (which would normally be 5 in this case)
+		# 		df.loc[df['Grade'] == '2 3 4 5', 'Grade'] = '4'
+		# 		df.loc[df['Grade'] == '6 7', 'Grade'] = '7'
+		elif school_name in ['Cascadia', 'Decatur']:
+			df.loc[df['Grade'] == 'K Preschool', 'Grade'] = 'Preschool'
+			df.loc[df['Grade'] == 'K 1', 'Grade'] = '1'
+			df.loc[df['Grade'] == '1 2', 'Grade'] = '2'
+
+		# df.loc[df['Grade'] == '1 2 3 4 5 K', 'Grade'] = 'K'
+		# df.loc[df['Grade'] == '2 3', 'Grade'] = '3'
+		# df.loc[df['Grade'] == '3 4', 'Grade'] = '4'
+		# df.loc[df['Grade'] == '2 3 4', 'Grade'] = '4'
+
+		# This one goes against the pattern (by being the first grade in the sequence rather than the last), but it's a very common pattern
+		# for elementary schools in SPS
+		df.loc[df['Grade'] == '5 6 7', 'Grade'] = '5'
+
+		df.loc[df['Grade'] == '4 5 6', 'Grade'] = '6'
+		df.loc[df['Grade'] == '3 4 5 6', 'Grade'] = '6'
+		# df.loc[df['Grade'] == '4 5 6 7', 'Grade'] = '7'
+		# df.loc[df['Grade'] == '4 5 6 7 8', 'Grade'] = '8'
+		df.loc[df['Grade'] == '8 9', 'Grade'] = '8'
+		df.loc[df['Grade'] == '4 5 6 7 8 9', 'Grade'] = '9'
+		df.loc[df['Grade'] == '5 6 7 8 9', 'Grade'] = '9'
+		df.loc[df['Grade'] == '6 7 8 9 10', 'Grade'] = '10'
+		df.loc[df['Grade'] == '5 6 7 8 9 10', 'Grade'] = '10'
+
+		# For any other weird 'Grade' values, we set to 'Grade' to an error sentintel value, and warn if it's for a grade cohort that isn't tiny
+		valid_grades = [
+			'Preschool',
+			'K',
+			'1',
+			'2',
+			'3',
+			'4',
+			'5',
+			'6',
+			'7',
+			'8',
+			'9',
+			'10',
+			'11',
+			'12',
+			'Total',  # At this point we still have 'Total' rows in the data; they get filtered out later
+		]
+
+		invalid_grade_filter = ~df['Grade'].isin(valid_grades)
+
+		invalid_grade_student_count = df[invalid_grade_filter]['Total Student Count'].sum()
+
+		if invalid_grade_student_count >= 10:
+			print("WARNING: Unusual values were parsed for 'Grade' for a grade cohort with more than 10 students:")
+			print("")
+			print(f"Input PDF: {pdf_path}")
+			print(f"School: {school_name}")
+			print("")
+			print(df[invalid_grade_filter])
+			print("")
+
+		df.loc[invalid_grade_filter, 'Grade'] = '(error)'
 
 		# Check that totals add up properly
 		individual_sums = df[df['Grade'] != 'Total'][numeric_columns].sum()
@@ -232,7 +323,7 @@ def extract_data_from_pdf(pdf_path: str, month: str, output_csv_path: str, on_pd
 	output_directory = os.path.dirname(output_csv_path)
 	pathlib.Path(output_directory).mkdir(parents=True, exist_ok=True)
 
-	concatenated_df.to_csv(output_csv_path)
+	concatenated_df.to_csv(output_csv_path, index=False)
 
 	#print(f"Data from PDF '{pdf_path}' written to '{output_csv_path}'")
 
@@ -351,9 +442,9 @@ def main():
 
 	output_csv_path = 'output/p223/all.csv'
 	pathlib.Path(os.path.dirname(output_csv_path)).mkdir(parents=True, exist_ok=True)
-	concatenated_df.to_csv(output_csv_path)
+	concatenated_df.to_csv(output_csv_path, index=False)
 
-	Progress(completed_tasks=progress_total_tasks, total_tasks=progress_total_tasks, increment_completed=False).report(f"Data from all PDFs written to '{output_csv_path}'")
+	Progress(completed_tasks=progress_total_tasks, total_tasks=progress_total_tasks).report(f"Data from all PDFs written to '{output_csv_path}'", increment_completed=False)
 
 
 if __name__ == "__main__":
