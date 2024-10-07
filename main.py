@@ -266,9 +266,10 @@ def get_task_inputs(pdf_path: str, output_directory: str) -> ExtractTaskInputs:
 	return ExtractTaskInputs(pdf_path, month, output_csv_path)
 
 
-def extract_task(inputs: ExtractTaskInputs):
-	extract_data_from_pdf(inputs.pdf_path, inputs.month, inputs.output_csv_path)
-	return inputs.output_csv_path
+def extract_worker(task_queue, done_queue):
+	for inputs in iter(task_queue.get, 'STOP'):
+		extract_data_from_pdf(inputs.pdf_path, inputs.month, inputs.output_csv_path)
+		done_queue.put(inputs.output_csv_path)
 
 
 def extract_all_pdfs(input_directory: str, output_directory: str) -> List[str]:
@@ -276,9 +277,34 @@ def extract_all_pdfs(input_directory: str, output_directory: str) -> List[str]:
 
 	tasks = [get_task_inputs(pdf_path, output_directory) for pdf_path in pdf_paths]
 
-	with multiprocessing.Pool(8) as pool:
-		output_csv_paths = list(tqdm.tqdm(pool.imap_unordered(extract_task, tasks), total=len(tasks), desc="Extracting data from PDFs"))
-		return output_csv_paths
+	tasks.sort(key=lambda task: task.month)
+
+	task_queue = multiprocessing.Queue()
+	done_queue = multiprocessing.Queue()
+
+	for task in tasks:
+		task_queue.put(task)
+
+	PROCESS_COUNT = 8
+	for _ in range(PROCESS_COUNT):
+		multiprocessing.Process(target=extract_worker, args=(task_queue, done_queue)).start()
+
+	output_csv_paths: List[str] = []
+
+	for task_index in range(len(tasks)):
+		output_csv_path = done_queue.get()
+		print(f"Done with {task_index}: {output_csv_path}")
+		output_csv_paths.append(output_csv_path)
+
+	# Shut down child processes
+	for _ in range(PROCESS_COUNT):
+		task_queue.put('STOP')
+
+	# with multiprocessing.Pool(8) as pool:
+	# 	output_csv_paths = list(tqdm.tqdm(pool.imap_unordered(extract_task, tasks), total=len(tasks), desc="Extracting data from PDFs"))
+	# 	return output_csv_paths
+
+	return output_csv_paths
 
 
 def main():
