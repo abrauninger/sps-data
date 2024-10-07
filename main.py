@@ -9,7 +9,9 @@ import re
 import time
 import traceback
 
-def extract_data_from_pdf(pdf_path: str, pdf_index: int, pdf_count: int) -> pandas.DataFrame:
+from typing import List
+
+def extract_data_from_pdf(pdf_path: str, pdf_index: int, pdf_count: int, month: str, output_csv_path: str):
 	dataframes = []
 
 	print(f"[{pdf_index+1}/{pdf_count}] Loading PDF: '{pdf_path}'")
@@ -215,46 +217,62 @@ def extract_data_from_pdf(pdf_path: str, pdf_index: int, pdf_count: int) -> pand
 	# Drop 'District Total' from the concatenated data
 	concatenated_df = concatenated_df[concatenated_df['School'] != 'District Total']
 
-	return concatenated_df
+	concatenated_df['Month'] = month
+
+	# Move 'Month' to the beginning of the column list
+	columns = concatenated_df.columns.tolist()
+	columns = ['Month'] + [column for column in columns if column != 'Month']
+	concatenated_df = concatenated_df[columns]
+
+	# Sort by school name
+	concatenated_df = concatenated_df.sort_values(['School'])
+
+	output_directory = os.path.dirname(output_csv_path)
+	pathlib.Path(output_directory).mkdir(parents=True, exist_ok=True)
+
+	concatenated_df.to_csv(output_csv_path)
+
+
+def extract_all_pdfs(input_directory: str, output_directory: str) -> List[str]:
+	output_csv_paths: List[str] = []
+
+	pdf_paths = glob.glob(f'{input_directory}/*.pdf')
+
+	for pdf_index, pdf_path in enumerate(pdf_paths):
+		filename = os.path.basename(pdf_path)
+
+		m = re.match(r'^P223_(\D+)(\d+)\.pdf$', filename)
+		if m is None:
+			print(f"Unable to determine month and year from filename: '{filename}'")
+			continue
+
+		month_name_abbreviated = m.group(1)
+		year_two_digit = m.group(2)
+
+		parsed_month = time.strptime(f'{month_name_abbreviated} {year_two_digit}', '%b %y')
+		month = time.strftime('%Y-%m', parsed_month)
+
+		output_csv_path = f'{output_directory}/{month}.csv'
+
+		extract_data_from_pdf(pdf_path, pdf_index, len(pdf_paths), month, output_csv_path)
+
+		output_csv_paths.append(output_csv_path)
+
+	return output_csv_paths
 
 
 def main():
 	try:
-		dataframes = []
+		month_csv_files = extract_all_pdfs('input', 'output/p223/month')
 
-		pdf_paths = glob.glob('./input/*.pdf')
-
-		for pdf_index, pdf_path in enumerate(pdf_paths):
-			filename = os.path.basename(pdf_path)
-
-			m = re.match(r'^P223_(\D+)(\d+)\.pdf$', filename)
-			if m is None:
-				print(f"Unable to determine month and year from filename: '{filename}'")
-				continue
-
-			month_name_abbreviated = m.group(1)
-			year_two_digit = m.group(2)
-
-			parsed_month = time.strptime(f'{month_name_abbreviated} {year_two_digit}', '%b %y')
-			month = time.strftime('%Y-%m', parsed_month)
-
-			df = extract_data_from_pdf(pdf_path, pdf_index, len(pdf_paths))
-
-			df['Month'] = month
-
-			# Move 'Month' to the beginning of the column list
-			columns = df.columns.tolist()
-			columns = ['Month'] + [column for column in columns if column != 'Month']
-			df = df[columns]
-
-			dataframes.append(df)
+		dataframes = [pandas.read_csv(month_csv_file) for month_csv_file in month_csv_files]
 
 		concatenated_df = pandas.concat(dataframes)
 		
 		concatenated_df = concatenated_df.sort_values(['Month', 'School'])
 
-		output_csv_path = 'output/p223_all.csv'
-		pathlib.Path('output').mkdir(parents=True, exist_ok=True)
+		output_csv_path = 'output/p223/all.csv'
+		pathlib.Path(os.path.dirname(output_csv_path)).mkdir(parents=True, exist_ok=True)
 		concatenated_df.to_csv(output_csv_path)
 
 		print(f"Data written to '{output_csv_path}'")
