@@ -11,14 +11,15 @@ import time
 import tqdm
 import traceback
 
-from typing import List, NamedTuple
+from typing import Callable, List, NamedTuple
 
-def extract_data_from_pdf(pdf_path: str, month: str, output_csv_path: str):
+def extract_data_from_pdf(pdf_path: str, month: str, output_csv_path: str, on_pdf_load: Callable):
 	dataframes = []
 
 	#print(f"Loading PDF: '{pdf_path}'")
 	pdf = pdfquery.PDFQuery(pdf_path)
 	pdf.load()
+	on_pdf_load()
 
 	#print(f"Processing PDF: '{pdf_path}'")
 	pages = pdf.pq('LTPage')
@@ -267,9 +268,33 @@ def get_task_inputs(pdf_path: str, output_directory: str) -> ExtractTaskInputs:
 
 
 def extract_worker(task_queue, done_queue):
-	for inputs in iter(task_queue.get, 'STOP'):
-		extract_data_from_pdf(inputs.pdf_path, inputs.month, inputs.output_csv_path)
-		done_queue.put(inputs.output_csv_path)
+	try:
+		on_pdf_load = lambda: done_queue.put(['loaded_pdf', inputs.pdf_path])
+
+		for inputs in iter(task_queue.get, 'STOP'):
+			extract_data_from_pdf(inputs.pdf_path, inputs.month, inputs.output_csv_path, on_pdf_load)
+			done_queue.put(['finished_pdf', inputs.pdf_path, inputs.output_csv_path])
+	except Exception as e:
+		traceback.print_exc()
+		print('')
+
+		# import pdb
+		# pdb.post_mortem()
+
+
+class Progress:
+	completed_tasks: int
+	total_tasks: int
+
+	def __init__(self, total_tasks: int):
+		self.completed_tasks = 0
+		self.total_tasks = total_tasks
+
+	def report(self, message: str, increment_completed=True):
+		if increment_completed:
+			self.completed_tasks = self.completed_tasks + 1
+
+		print(f"[{self.completed_tasks}/{self.total_tasks}] {message}")
 
 
 def extract_all_pdfs(input_directory: str, output_directory: str) -> List[str]:
@@ -291,10 +316,23 @@ def extract_all_pdfs(input_directory: str, output_directory: str) -> List[str]:
 
 	output_csv_paths: List[str] = []
 
-	for task_index in range(len(tasks)):
-		output_csv_path = done_queue.get()
-		print(f"Done with {task_index}: {output_csv_path}")
-		output_csv_paths.append(output_csv_path)
+	completed_progress = 0
+
+	# Each PDF task has two big chunks of work: Load PDF, and extract data from it
+	total_expected_done_queue_count = len(tasks) * 2
+
+	progress = Progress(total_tasks=total_expected_done_queue_count)
+
+	progress.report(f"Extracting {len(pdf_paths)} PDF(s)", increment_completed=False)
+
+	for _ in range(total_expected_done_queue_count):
+		done_queue_item = done_queue.get()
+		match done_queue_item:
+			case ["loaded_pdf", pdf_path]:
+				progress.report(f"Loaded PDF: {pdf_path}")
+			case ["finished_pdf", pdf_path, output_csv_path]:
+				output_csv_paths.append(output_csv_path)
+				progress.report(f"Extracted data from {pdf_path} to {output_csv_path}")
 
 	# Shut down child processes
 	for _ in range(PROCESS_COUNT):
@@ -308,27 +346,19 @@ def extract_all_pdfs(input_directory: str, output_directory: str) -> List[str]:
 
 
 def main():
-	try:
-		month_csv_files = extract_all_pdfs('input', 'output/p223/month')
+	month_csv_files = extract_all_pdfs('input', 'output/p223/month')
 
-		dataframes = [pandas.read_csv(month_csv_file) for month_csv_file in month_csv_files]
+	dataframes = [pandas.read_csv(month_csv_file) for month_csv_file in month_csv_files]
 
-		concatenated_df = pandas.concat(dataframes)
-		
-		concatenated_df = concatenated_df.sort_values(['Month', 'School'])
+	concatenated_df = pandas.concat(dataframes)
+	
+	concatenated_df = concatenated_df.sort_values(['Month', 'School'])
 
-		output_csv_path = 'output/p223/all.csv'
-		pathlib.Path(os.path.dirname(output_csv_path)).mkdir(parents=True, exist_ok=True)
-		concatenated_df.to_csv(output_csv_path)
+	output_csv_path = 'output/p223/all.csv'
+	pathlib.Path(os.path.dirname(output_csv_path)).mkdir(parents=True, exist_ok=True)
+	concatenated_df.to_csv(output_csv_path)
 
-		print(f"Data from all PDFs written to '{output_csv_path}'")
-
-	except Exception as e:
-		traceback.print_exc()
-		print('')
-
-		import pdb
-		pdb.post_mortem()
+	print(f"Data from all PDFs written to '{output_csv_path}'")
 
 
 if __name__ == "__main__":
