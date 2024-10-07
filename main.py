@@ -8,6 +8,7 @@ import pathlib
 import pdfquery
 import re
 import time
+import tqdm
 import traceback
 
 from typing import List, NamedTuple
@@ -15,11 +16,11 @@ from typing import List, NamedTuple
 def extract_data_from_pdf(pdf_path: str, month: str, output_csv_path: str):
 	dataframes = []
 
-	print(f"Loading PDF: '{pdf_path}'")
+	#print(f"Loading PDF: '{pdf_path}'")
 	pdf = pdfquery.PDFQuery(pdf_path)
 	pdf.load()
 
-	print(f"Processing PDF: '{pdf_path}'")
+	#print(f"Processing PDF: '{pdf_path}'")
 	pages = pdf.pq('LTPage')
 
 	numeric_columns = [
@@ -233,7 +234,7 @@ def extract_data_from_pdf(pdf_path: str, month: str, output_csv_path: str):
 
 	concatenated_df.to_csv(output_csv_path)
 
-	print(f"Data from PDF '{pdf_path}' written to '{output_csv_path}'")
+	#print(f"Data from PDF '{pdf_path}' written to '{output_csv_path}'")
 
 
 def month_from_pdf_file_name(pdf_path) -> str:
@@ -275,10 +276,8 @@ def extract_all_pdfs(input_directory: str, output_directory: str) -> List[str]:
 
 	tasks = [get_task_inputs(pdf_path, output_directory) for pdf_path in pdf_paths]
 
-	tasks.sort(key=lambda task: task.month)
-
 	with multiprocessing.Pool(8) as pool:
-		output_csv_paths = pool.map(extract_task, tasks)
+		output_csv_paths = list(tqdm.tqdm(pool.imap_unordered(extract_task, tasks), total=len(tasks), desc="Extracting data from PDFs"))
 		return output_csv_paths
 
 
