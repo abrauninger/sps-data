@@ -1,5 +1,6 @@
 import camelot
 import glob
+import multiprocessing
 import numpy
 import os
 import pandas
@@ -233,25 +234,35 @@ def extract_data_from_pdf(pdf_path: str, pdf_index: int, pdf_count: int, month: 
 	concatenated_df.to_csv(output_csv_path)
 
 
+def month_from_pdf_file_name(pdf_path) -> str:
+	filename = os.path.basename(pdf_path)
+
+	m = re.match(r'^P223_(\D+)(\d+)\.pdf$', filename)
+	if m is None:
+		raise Exception(f"Unable to determine month and year from filename: '{filename}'")
+
+	month_name_abbreviated = m.group(1)
+	year_two_digit = m.group(2)
+
+	parsed_month = time.strptime(f'{month_name_abbreviated} {year_two_digit}', '%b %y')
+	month = time.strftime('%Y-%m', parsed_month)
+
+	return month
+
+
 def extract_all_pdfs(input_directory: str, output_directory: str) -> List[str]:
 	output_csv_paths: List[str] = []
 
 	pdf_paths = glob.glob(f'{input_directory}/*.pdf')
 
-	for pdf_index, pdf_path in enumerate(pdf_paths):
-		filename = os.path.basename(pdf_path)
+	pdf_paths_and_months = [(pdf_path, month_from_pdf_file_name(pdf_path)) for pdf_path in pdf_paths]
 
-		m = re.match(r'^P223_(\D+)(\d+)\.pdf$', filename)
-		if m is None:
-			print(f"Unable to determine month and year from filename: '{filename}'")
-			continue
+	pdf_paths_and_months.sort(key=lambda path_and_month: path_and_month[1])
 
-		month_name_abbreviated = m.group(1)
-		year_two_digit = m.group(2)
+	#with multiprocessing.Pool(8) as pool:
+	#	pool.map(lambda pdf_path: )
 
-		parsed_month = time.strptime(f'{month_name_abbreviated} {year_two_digit}', '%b %y')
-		month = time.strftime('%Y-%m', parsed_month)
-
+	for pdf_index, (pdf_path, month) in enumerate(pdf_paths_and_months):
 		output_csv_path = f'{output_directory}/{month}.csv'
 
 		extract_data_from_pdf(pdf_path, pdf_index, len(pdf_paths), month, output_csv_path)
