@@ -10,16 +10,16 @@ import re
 import time
 import traceback
 
-from typing import List
+from typing import List, NamedTuple
 
-def extract_data_from_pdf(pdf_path: str, pdf_index: int, pdf_count: int, month: str, output_csv_path: str):
+def extract_data_from_pdf(pdf_path: str, month: str, output_csv_path: str):
 	dataframes = []
 
-	print(f"[{pdf_index+1}/{pdf_count}] Loading PDF: '{pdf_path}'")
+	print(f"Loading PDF: '{pdf_path}'")
 	pdf = pdfquery.PDFQuery(pdf_path)
 	pdf.load()
 
-	print(f"[{pdf_index+1}/{pdf_count}] Processing PDF: '{pdf_path}'")
+	print(f"Processing PDF: '{pdf_path}'")
 	pages = pdf.pq('LTPage')
 
 	numeric_columns = [
@@ -233,6 +233,8 @@ def extract_data_from_pdf(pdf_path: str, pdf_index: int, pdf_count: int, month: 
 
 	concatenated_df.to_csv(output_csv_path)
 
+	print(f"Data from PDF '{pdf_path}' written to '{output_csv_path}'")
+
 
 def month_from_pdf_file_name(pdf_path) -> str:
 	filename = os.path.basename(pdf_path)
@@ -250,26 +252,34 @@ def month_from_pdf_file_name(pdf_path) -> str:
 	return month
 
 
-def extract_all_pdfs(input_directory: str, output_directory: str) -> List[str]:
-	output_csv_paths: List[str] = []
+class ExtractTaskInputs(NamedTuple):
+	pdf_path: str
+	month: str
+	output_csv_path: str
 
+
+def get_task_inputs(pdf_path: str, output_directory: str) -> ExtractTaskInputs:
+	month = month_from_pdf_file_name(pdf_path)
+	output_csv_path = f'{output_directory}/{month}.csv'
+
+	return ExtractTaskInputs(pdf_path, month, output_csv_path)
+
+
+def extract_task(inputs: ExtractTaskInputs):
+	extract_data_from_pdf(inputs.pdf_path, inputs.month, inputs.output_csv_path)
+	return inputs.output_csv_path
+
+
+def extract_all_pdfs(input_directory: str, output_directory: str) -> List[str]:
 	pdf_paths = glob.glob(f'{input_directory}/*.pdf')
 
-	pdf_paths_and_months = [(pdf_path, month_from_pdf_file_name(pdf_path)) for pdf_path in pdf_paths]
+	tasks = [get_task_inputs(pdf_path, output_directory) for pdf_path in pdf_paths]
 
-	pdf_paths_and_months.sort(key=lambda path_and_month: path_and_month[1])
+	tasks.sort(key=lambda task: task.month)
 
-	#with multiprocessing.Pool(8) as pool:
-	#	pool.map(lambda pdf_path: )
-
-	for pdf_index, (pdf_path, month) in enumerate(pdf_paths_and_months):
-		output_csv_path = f'{output_directory}/{month}.csv'
-
-		extract_data_from_pdf(pdf_path, pdf_index, len(pdf_paths), month, output_csv_path)
-
-		output_csv_paths.append(output_csv_path)
-
-	return output_csv_paths
+	with multiprocessing.Pool(8) as pool:
+		output_csv_paths = pool.map(extract_task, tasks)
+		return output_csv_paths
 
 
 def main():
@@ -286,7 +296,7 @@ def main():
 		pathlib.Path(os.path.dirname(output_csv_path)).mkdir(parents=True, exist_ok=True)
 		concatenated_df.to_csv(output_csv_path)
 
-		print(f"Data written to '{output_csv_path}'")
+		print(f"Data from all PDFs written to '{output_csv_path}'")
 
 	except Exception as e:
 		traceback.print_exc()
